@@ -126,6 +126,14 @@ class NavigationTaskCustom(BaseTask):
                 shape=(self.task_config.vae_config.latent_dims,),
                 dtype=np.float32,
             )
+        # Add image observations
+        # Try to infer image shapes from obs_dict, else use defaults
+        H, W = 135, 240
+        if "depth_range_pixels" in self.obs_dict:
+            H, W = self.obs_dict["depth_range_pixels"].shape[-2:]
+        obs_space_dict["depth_image"] = Box(low=0.0, high=1.0, shape=(1, H, W), dtype=np.float32)
+        obs_space_dict["rgb_image"] = Box(low=0.0, high=1.0, shape=(4, H, W), dtype=np.float32)
+        obs_space_dict["segmentation_image"] = Box(low=0, high=255, shape=(1, H, W), dtype=np.int32)
         self.observation_space = Dict(obs_space_dict)
 
         self.action_space = Box(low=-1.0, high=1.0, shape=(4,), dtype=np.float32)
@@ -153,11 +161,16 @@ class NavigationTaskCustom(BaseTask):
                 device=self.device,
                 requires_grad=False,
             )
+        # Add image obs to task_obs
+        self.task_obs["depth_image"] = torch.zeros((self.sim_env.num_envs, 1, H, W), device=self.device, dtype=torch.float32)
+        self.task_obs["rgb_image"] = torch.zeros((self.sim_env.num_envs, 4, H, W), device=self.device, dtype=torch.float32)
+        self.task_obs["segmentation_image"] = torch.zeros((self.sim_env.num_envs, 1, H, W), device=self.device, dtype=torch.int32)
 
         self.num_task_steps = 0
 
     def close(self):
-        self.sim_env.delete_env()
+        # Proper cleanup: set sim_env to None (EnvManager has no delete_env)
+        self.sim_env = None
 
     def reset(self):
         self.reset_idx(torch.arange(self.sim_env.num_envs))
@@ -386,6 +399,25 @@ class NavigationTaskCustom(BaseTask):
         self.task_obs["actions"][:] = self.obs_dict["robot_actions"]
         if self.task_config.vae_config.use_vae:
             self.task_obs["image_latents"][:] = self.image_latents
+        # Add image observations
+        if "depth_range_pixels" in self.obs_dict:
+            self.task_obs["depth_image"][:] = self.obs_dict["depth_range_pixels"]
+        else:
+            self.task_obs["depth_image"][:] = 0.0
+        if "rgb_pixels" in self.obs_dict:
+            # (N, 1, H, W, 4) -> (N, 4, H, W)
+            rgb = self.obs_dict["rgb_pixels"]
+            if rgb.shape[1] == 1:
+                rgb = rgb[:, 0].permute(0, 3, 1, 2)  # (N, 4, H, W)
+            else:
+                rgb = rgb.permute(0, 1, 4, 2, 3).reshape(rgb.shape[0], -1, rgb.shape[2], rgb.shape[3])
+            self.task_obs["rgb_image"][:] = rgb
+        else:
+            self.task_obs["rgb_image"][:] = 0.0
+        if "segmentation_pixels" in self.obs_dict:
+            self.task_obs["segmentation_image"][:] = self.obs_dict["segmentation_pixels"]
+        else:
+            self.task_obs["segmentation_image"][:] = 0
         # self.task_obs["rewards"] = self.rewards
         # self.task_obs["terminations"] = self.terminations
         # self.task_obs["truncations"] = self.truncations
