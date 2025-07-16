@@ -19,7 +19,7 @@ def dict_to_class(dict):
     return type("ClassFromDict", (object,), dict)
 
 
-class NavigationTaskCustom(BaseTask):
+class NavigationTaskCustomBase(BaseTask):
     def __init__(
         self, task_config, seed=None, num_envs=None, headless=None, device=None, use_warp=None
     ):
@@ -286,7 +286,13 @@ class NavigationTaskCustom(BaseTask):
             self.timeouts_aggregate = 0
 
     def process_image_observation(self):
-        image_obs = self.obs_dict["depth_range_pixels"].squeeze(1)
+        image_obs = self.obs_dict["depth_range_pixels"]
+        # Ensure image_obs is (N, 1, H, W)
+        if image_obs.ndim == 3:
+            image_obs = image_obs.unsqueeze(1)
+        elif image_obs.ndim == 5:
+            # Sometimes shape is (N, 1, H, W, C), reduce to (N, 1, H, W)
+            image_obs = image_obs[..., 0]
         if self.task_config.vae_config.use_vae:
             self.image_latents[:] = self.vae_model.encode(image_obs)
         # # comments to make sure the VAE does as expected

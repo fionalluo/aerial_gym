@@ -15,7 +15,8 @@ from aerial_gym.task.position_setpoint_task_acceleration_sim2real.position_setpo
 )
 
 from aerial_gym.task.navigation_task.navigation_task import NavigationTask
-from aerial_gym.task.navigation_task.navigation_task_custom import NavigationTaskCustom
+from aerial_gym.task.navigation_task.navigation_task_custom import NavigationTaskCustomBase
+from aerial_gym.task.navigation_task.navigation_task_custom_gym_wrapper import NavigationTaskCustomEnv
 
 from aerial_gym.config.task_config.position_setpoint_task_config import (
     task_config as position_setpoint_task_config,
@@ -62,7 +63,8 @@ task_registry.register_task(
 )
 
 task_registry.register_task("navigation_task", NavigationTask, navigation_task_config)
-task_registry.register_task("navigation_task_custom", NavigationTaskCustom, navigation_task_config)
+task_registry.register_task("navigation_task_custom", NavigationTaskCustomBase, navigation_task_config)
+task_registry.register_task("navigation_task_custom_gym", NavigationTaskCustomEnv, navigation_task_config)
 
 
 from aerial_gym.task.position_setpoint_task_reconfigurable.position_setpoint_task_reconfigurable import (
