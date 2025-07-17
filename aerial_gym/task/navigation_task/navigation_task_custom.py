@@ -19,7 +19,7 @@ def dict_to_class(dict):
     return type("ClassFromDict", (object,), dict)
 
 
-class NavigationTaskCustomBase(BaseTask):
+class NavigationTaskCustom(BaseTask):
     def __init__(
         self, task_config, seed=None, num_envs=None, headless=None, device=None, use_warp=None
     ):
@@ -81,16 +81,6 @@ class NavigationTaskCustomBase(BaseTask):
         self.pos_error_vehicle_frame_prev = torch.zeros_like(self.target_position)
         self.pos_error_vehicle_frame = torch.zeros_like(self.target_position)
 
-        if self.task_config.vae_config.use_vae:
-            self.vae_model = VAEImageEncoder(config=self.task_config.vae_config, device=self.device)
-            self.image_latents = torch.zeros(
-                (self.sim_env.num_envs, self.task_config.vae_config.latent_dims),
-                device=self.device,
-                requires_grad=False,
-            )
-        else:
-            self.vae_model = lambda x: x
-
         # Get the dictionary once from the environment and use it to get the observations later.
         # This is to avoid constant retuning of data back anf forth across functions as the tensors update and can be read in-place.
         self.obs_dict = self.sim_env.get_obs()
@@ -119,13 +109,6 @@ class NavigationTaskCustomBase(BaseTask):
             "angvel": Box(low=-1.0, high=1.0, shape=(3,), dtype=np.float32),
             "actions": Box(low=-1.0, high=1.0, shape=(4,), dtype=np.float32),
         }
-        if self.task_config.vae_config.use_vae:
-            obs_space_dict["image_latents"] = Box(
-                low=-np.inf,
-                high=np.inf,
-                shape=(self.task_config.vae_config.latent_dims,),
-                dtype=np.float32,
-            )
         # Add image observations
         # Try to infer image shapes from obs_dict, else use defaults
         H, W = 135, 240
@@ -155,12 +138,6 @@ class NavigationTaskCustomBase(BaseTask):
             "angvel": torch.zeros((self.sim_env.num_envs, 3), device=self.device, requires_grad=False),
             "actions": torch.zeros((self.sim_env.num_envs, 4), device=self.device, requires_grad=False),
         }
-        if self.task_config.vae_config.use_vae:
-            self.task_obs["image_latents"] = torch.zeros(
-                (self.sim_env.num_envs, self.task_config.vae_config.latent_dims),
-                device=self.device,
-                requires_grad=False,
-            )
         # Add image obs to task_obs
         self.task_obs["depth_image"] = torch.zeros((self.sim_env.num_envs, 1, H, W), device=self.device, dtype=torch.float32)
         self.task_obs["rgb_image"] = torch.zeros((self.sim_env.num_envs, 4, H, W), device=self.device, dtype=torch.float32)
@@ -286,26 +263,8 @@ class NavigationTaskCustomBase(BaseTask):
             self.timeouts_aggregate = 0
 
     def process_image_observation(self):
-        image_obs = self.obs_dict["depth_range_pixels"]
-        # Ensure image_obs is (N, 1, H, W)
-        if image_obs.ndim == 3:
-            image_obs = image_obs.unsqueeze(1)
-        elif image_obs.ndim == 5:
-            # Sometimes shape is (N, 1, H, W, C), reduce to (N, 1, H, W)
-            image_obs = image_obs[..., 0]
-        if self.task_config.vae_config.use_vae:
-            self.image_latents[:] = self.vae_model.encode(image_obs)
-        # # comments to make sure the VAE does as expected
-        # decoded_image = self.vae_model.decode(self.image_latents[0].unsqueeze(0))
-        # image0 = image_obs[0].cpu().numpy()
-        # decoded_image0 = decoded_image[0].squeeze(0).cpu().numpy()
-        # # save as .png with timestep
-        # if not hasattr(self, "img_ctr"):
-        #     self.img_ctr = 0
-        # self.img_ctr += 1
-        # import matplotlib.pyplot as plt
-        # plt.imsave(f"image0{self.img_ctr}.png", image0, vmin=0, vmax=1)
-        # plt.imsave(f"decoded_image0{self.img_ctr}.png", decoded_image0, vmin=0, vmax=1)
+        # No VAE processing - just pass raw images as-is
+        pass
 
     def step(self, actions):
         # this uses the action, gets observations
@@ -403,8 +362,6 @@ class NavigationTaskCustomBase(BaseTask):
         self.task_obs["linvel"][:] = self.obs_dict["robot_body_linvel"]
         self.task_obs["angvel"][:] = self.obs_dict["robot_body_angvel"]
         self.task_obs["actions"][:] = self.obs_dict["robot_actions"]
-        if self.task_config.vae_config.use_vae:
-            self.task_obs["image_latents"][:] = self.image_latents
         # Add image observations
         if "depth_range_pixels" in self.obs_dict:
             self.task_obs["depth_image"][:] = self.obs_dict["depth_range_pixels"]
